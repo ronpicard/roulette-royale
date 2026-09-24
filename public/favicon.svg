@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="spindle" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#f3d27a" />
+      <stop offset="0.55" stop-color="#d4af37" />
+      <stop offset="1" stop-color="#8a6b1e" />
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#07140e" />
+  <circle cx="32" cy="32" r="28" fill="none" stroke="#d4af37" stroke-width="1.4" opacity="0.7" />
+  <g stroke="#07140e" stroke-width="0.6" stroke-linejoin="round">
+    <path d="M32 32 L32 5 A27 27 0 0 1 51.1 12.9 Z" fill="#0b7a3b" />
+    <path d="M32 32 L51.1 12.9 A27 27 0 0 1 59 32 Z" fill="#141414" />
+    <path d="M32 32 L59 32 A27 27 0 0 1 51.1 51.1 Z" fill="#b3121b" />
+    <path d="M32 32 L51.1 51.1 A27 27 0 0 1 32 59 Z" fill="#141414" />
+    <path d="M32 32 L32 59 A27 27 0 0 1 12.9 51.1 Z" fill="#b3121b" />
+    <path d="M32 32 L12.9 51.1 A27 27 0 0 1 5 32 Z" fill="#141414" />
+    <path d="M32 32 L5 32 A27 27 0 0 1 12.9 12.9 Z" fill="#b3121b" />
+    <path d="M32 32 L12.9 12.9 A27 27 0 0 1 32 5 Z" fill="#141414" />
+  </g>
+  <circle cx="32" cy="32" r="10.5" fill="url(#spindle)" stroke="#5c451a" stroke-width="0.6" />
+  <path d="M32 25v13M25 32h13" stroke="#5c451a" stroke-width="1.1" stroke-linecap="round" />
+  <circle cx="32" cy="32" r="2.2" fill="#5c451a" />
+</svg>
