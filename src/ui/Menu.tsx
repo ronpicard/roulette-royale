@@ -10,10 +10,12 @@ interface MenuProps {
   savedBankroll: number
   muted: boolean
   quickSpin: boolean
+  voice: boolean
   cameraView: CameraView
   onPlay: () => void
   onToggleMute: () => void
   onToggleQuickSpin: () => void
+  onToggleVoice: () => void
   onCycleCamera: () => void
   onResetCredits: () => void
 }
@@ -83,10 +85,12 @@ export default function Menu({
   savedBankroll,
   muted,
   quickSpin,
+  voice,
   cameraView,
   onPlay,
   onToggleMute,
   onToggleQuickSpin,
+  onToggleVoice,
   onCycleCamera,
   onResetCredits,
 }: MenuProps) {
@@ -177,6 +181,19 @@ export default function Menu({
               onClick={onToggleMute}
             >
               {muted ? <MuteIcon /> : <UnmuteIcon />}
+            </button>
+          </div>
+          <div className="settings-row">
+            <span className="settings-label">Croupier voice</span>
+            <button
+              type="button"
+              className="toggle-switch"
+              role="switch"
+              aria-checked={voice}
+              aria-label="Croupier voice"
+              onClick={onToggleVoice}
+            >
+              <span className="toggle-knob" />
             </button>
           </div>
           <div className="settings-row">

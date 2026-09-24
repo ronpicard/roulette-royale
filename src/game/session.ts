@@ -27,6 +27,11 @@ const SAVE_HISTORY_LENGTH = 50
 const NO_MORE_BETS_SECONDS = 1.8
 const RESULT_MESSAGE_SECONDS = 3
 
+/** Whether a spin's net win is big enough for the `bigWin` sound and the crowd's loudest cheer. */
+export function isBigWin(staked: number, net: number): boolean {
+  return net >= BIG_WIN_NET || (staked > 0 && net >= staked * 20)
+}
+
 /** Formats a whole number of credits with thousands separators, e.g. `1,250`. */
 function formatCredits(n: number): string {
   return Math.round(n).toLocaleString('en-US')
@@ -224,7 +229,7 @@ export function settleSpin(s: Session, number: number): Transition {
   const commands: Command[] = [
     { type: 'message', text: `${number} ${result.color[0]!.toUpperCase()}${result.color.slice(1)}`, seconds: RESULT_MESSAGE_SECONDS },
   ]
-  if (net >= BIG_WIN_NET || (staked > 0 && net >= staked * 20)) commands.push({ type: 'sound', name: 'bigWin' })
+  if (isBigWin(staked, net)) commands.push({ type: 'sound', name: 'bigWin' })
   else if (returned > 0) commands.push({ type: 'sound', name: 'win' })
   else if (staked > 0) commands.push({ type: 'sound', name: 'lose' })
   commands.push({ type: 'save' })

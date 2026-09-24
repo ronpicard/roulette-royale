@@ -177,6 +177,9 @@ export type SoundName =
   | 'win'
   | 'bigWin'
   | 'lose'
+  /** Crowd reactions; `intensity` is the reaction strength, 0 to 1. */
+  | 'cheer'
+  | 'boo'
   | 'refill'
   | 'denied'
 

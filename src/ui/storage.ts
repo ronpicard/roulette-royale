@@ -12,6 +12,7 @@ const SESSION_KEY = 'roulette-royale.session'
 const MUTED_KEY = 'roulette-royale.muted'
 const QUICK_SPIN_KEY = 'roulette-royale.quickSpin'
 const CAMERA_KEY = 'roulette-royale.camera'
+const VOICE_KEY = 'roulette-royale.voice'
 
 const CAMERA_VIEWS: readonly CameraView[] = ['auto', 'table', 'wheel', 'overhead']
 
@@ -89,6 +90,24 @@ export function saveQuickSpin(storage: Storage | null, quickSpin: boolean): void
     storage.setItem(QUICK_SPIN_KEY, quickSpin ? '1' : '0')
   } catch {
     // Quota exceeded or storage disabled mid-session: the quick-spin preference just won't persist.
+  }
+}
+
+export function loadVoice(storage: Storage | null): boolean {
+  if (!storage) return true
+  try {
+    return storage.getItem(VOICE_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+export function saveVoice(storage: Storage | null, voice: boolean): void {
+  if (!storage) return
+  try {
+    storage.setItem(VOICE_KEY, voice ? '1' : '0')
+  } catch {
+    // Quota exceeded or storage disabled mid-session: the voice preference just won't persist.
   }
 }
 

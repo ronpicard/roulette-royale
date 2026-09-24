@@ -13,11 +13,13 @@ import {
   loadMuted,
   loadQuickSpin,
   loadSession,
+  loadVoice,
   safeLocalStorage,
   saveCamera,
   saveMuted,
   saveQuickSpin,
   saveSession,
+  saveVoice,
 } from './ui/storage.ts'
 
 /** The two screens the shell can show. The engine itself always keeps rendering behind them. */
@@ -44,6 +46,7 @@ export default function App() {
   const [audio] = useState<GameAudio>(() => createAudio())
   const [muted, setMuted] = useState<boolean>(() => loadMuted(storage))
   const [quickSpin, setQuickSpin] = useState<boolean>(() => loadQuickSpin(storage))
+  const [voice, setVoice] = useState<boolean>(() => loadVoice(storage))
   const [cameraView, setCameraView] = useState<CameraView>(() => loadCamera(storage))
 
   const [mode, setMode] = useState<Mode>('menu')
@@ -63,6 +66,9 @@ export default function App() {
 
   useEffect(() => () => window.clearTimeout(messageTimerRef.current), [])
   useEffect(() => () => audio.dispose(), [audio])
+
+  // Apply the croupier-voice preference, persisted or just toggled, to the audio.
+  useEffect(() => audio.setVoiceEnabled(voice), [audio, voice])
 
   // Put the engine in the right mode whenever it changes: attract behind the menu, the saved (or
   // fresh) session when play starts. Going to the menu returns any bets on the table to the
@@ -190,6 +196,14 @@ export default function App() {
     })
   }
 
+  function handleToggleVoice() {
+    setVoice((current) => {
+      const next = !current
+      saveVoice(storage, next)
+      return next
+    })
+  }
+
   function handleSelectChip(value: ChipValue) {
     setSelectedChip(value)
     api?.selectChip(value)
@@ -298,6 +312,7 @@ export default function App() {
       savedSessionRef.current = save
       setSavedSession(save)
     },
+    onAnnounce: (text) => audio.announce(text),
   }
 
   return (
@@ -311,10 +326,12 @@ export default function App() {
             savedBankroll={savedSession?.bankroll ?? 0}
             muted={muted}
             quickSpin={quickSpin}
+            voice={voice}
             cameraView={cameraView}
             onPlay={handlePlay}
             onToggleMute={handleToggleMute}
             onToggleQuickSpin={handleToggleQuickSpin}
+            onToggleVoice={handleToggleVoice}
             onCycleCamera={handleCycleCamera}
             onResetCredits={handleResetCredits}
           />

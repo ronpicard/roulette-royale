@@ -2,6 +2,15 @@
 
 All notable changes to Roulette Royale are documented in this file, following the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.1.0] - 2026-09-24
+
+### Added
+
+- Spectators around the table who follow the ball, then cheer your wins and boo your losses. The bigger the win, the louder the cheer; the bigger the loss, the louder the boo.
+- Confetti over the table and a flash of the table lamps when you win.
+- A croupier who calls "No more bets" and the winning number aloud, with a setting to turn the voice off.
+- The murmur of a busy casino and distant slot machines, which hushes while the ball rolls.
+
 ## [1.0.0] - 2026-09-24
 
 ### Added

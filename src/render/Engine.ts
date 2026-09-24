@@ -27,6 +27,8 @@ import { createCasinoRoom } from './casinoRoom.ts'
 import { createTableView } from './tableView.ts'
 import { createWheelView } from './wheelView.ts'
 import { createToteBoard } from './toteBoard.ts'
+import { createCrowd } from './crowd.ts'
+import { createConfetti } from './confetti.ts'
 
 import {
   TABLE_HEIGHT,
@@ -63,6 +65,7 @@ import {
 import { createWheel, launchBall, stepWheel, relativeSpeed, FIXED_DT } from '../game/physics.ts'
 import { spinParamsFromSeed } from '../game/rng.ts'
 import { attractBets } from '../game/autoplay.ts'
+import { NO_MORE_BETS_CALLOUT, crowdReaction, resultCallout } from '../game/crowd.ts'
 import type { ChipValue, Session, SessionSave, Transition, WheelEvent, WheelState } from '../game/types.ts'
 
 // -------------------------------------------------------------------------------------------
@@ -109,6 +112,11 @@ const LAYOUT_SPOT_INTENSITY = 3.2
 const WHEEL_SPOT_INTENSITY = 3
 const WHEEL_SPOT_OFFSET_X = 12
 const WHEEL_SPOT_OFFSET_Z = 24
+/** On a cheer the table lamps flash this many times over `LAMP_FLASH_SECONDS`. */
+const LAMP_FLASH_PULSES = 3
+const LAMP_FLASH_SECONDS = 1.5
+/** A strength-1 cheer brightens the lamps by up to this share at each flash's peak. */
+const LAMP_FLASH_GAIN = 0.55
 const HEMI_SKY_COLOR = 0x2a2014
 const HEMI_GROUND_COLOR = 0x05030a
 const HEMI_INTENSITY = 0.9
@@ -156,6 +164,21 @@ const CLOSEUP_EYE_HEIGHT = 24
 const CLOSEUP_EYE_BACK = 16
 /** How long the auto camera's settle close-up holds before returning to the table view. */
 const AUTO_CLOSEUP_SECONDS = 2.8
+/**
+ * When the crowd reacts, the auto camera cuts the pocket close-up short at this many seconds and
+ * turns to a standing player's eye-level view across the table, so the spectators' faces and
+ * raised arms are in frame, for `CROWD_SHOT_SECONDS`. The seated view looks down too steeply to
+ * show anyone's head.
+ */
+const CROWD_SHOT_START_SECONDS = 1.8
+const CROWD_SHOT_SECONDS = 3.8
+const CROWD_SHOT_EYE_Y = 60
+const CROWD_SHOT_EYE_Z = 58
+/** Portrait screens are narrow, so their crowd shot stands further back to fit the row in. */
+const CROWD_SHOT_PORTRAIT_EYE_Z = 110
+const CROWD_SHOT_LOOK_Y = 42
+const CROWD_SHOT_LOOK_Z = -30
+const CROWD_SHOT_CENTER_X = 7
 
 /**
  * Rendering cost steps, best first. The engine starts at the first step a device can likely hold
@@ -353,7 +376,9 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
   const wheelView = createWheelView()
   wheelView.group.position.set(WHEEL_CENTER_X, WHEEL_BASE_Y, WHEEL_CENTER_Z)
   const tote = createToteBoard()
-  scene.add(table.group, wheelView.group, tote.group)
+  const crowd = createCrowd()
+  const confetti = createConfetti()
+  scene.add(table.group, wheelView.group, tote.group, crowd.group, confetti.group)
 
   // --- Lighting (all point/spot lights decay = 0: the scene is in inches, not metres) -----------
 
@@ -443,9 +468,10 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
   const WHEEL_LOOK_TARGET = new THREE.Vector3(WHEEL_CENTER_X, WHEEL_BASE_Y + 2, WHEEL_CENTER_Z)
   const OVERHEAD_UP_LANDSCAPE = new THREE.Vector3(0, 0, -1)
   const OVERHEAD_UP_PORTRAIT = new THREE.Vector3(1, 0, 0)
+  const CROWD_SHOT_LOOK = new THREE.Vector3(CROWD_SHOT_CENTER_X, CROWD_SHOT_LOOK_Y, CROWD_SHOT_LOOK_Z)
   const CLOSEUP_EYE = new THREE.Vector3(WHEEL_CENTER_X, WHEEL_BASE_Y + CLOSEUP_EYE_HEIGHT, WHEEL_CENTER_Z + CLOSEUP_EYE_BACK)
 
-  type ResolvedView = 'table' | 'wheel' | 'overhead' | 'closeup'
+  type ResolvedView = 'table' | 'wheel' | 'overhead' | 'closeup' | 'crowd'
   type FitView = 'table' | 'wheel' | 'overhead'
 
   // --- Session / physics state -------------------------------------------------------------------
@@ -466,6 +492,11 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
   let previousPhase = session.phase
   let resultElapsed = 0
   let simTime = 0
+  /** Seconds into the lamps' celebration flash, or null when they burn steadily. */
+  let lampFlashElapsed: number | null = null
+  let lampFlashStrength = 0
+  /** Whether the auto camera turns to the crowd after this result's close-up. */
+  let crowdShot = false
 
   type AttractStep = 'placing' | 'waiting' | 'spinning' | 'result'
   let attractStep: AttractStep = 'placing'
@@ -502,6 +533,8 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
       table.showResult(null)
       wheelView.highlightPocket(null)
       showingResult = false
+      crowd.calm()
+      confetti.clear()
     }
   }
 
@@ -522,6 +555,10 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
     resultElapsed = 0
     previousPhase = session.phase
     launchTimer = null
+    lampFlashElapsed = null
+    crowdShot = false
+    crowd.calm()
+    confetti.clear()
     clearLongPressTimer()
     pointerDownInfo = null
   }
@@ -583,6 +620,19 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
     wheelView.highlightPocket(pocket)
     tote.setHistory(session.history, session.stats.counts)
     showingResult = true
+    const result = session.lastResult
+    if (mode === 'play' && result) events.onAnnounce(resultCallout(result.number, result.color))
+    const reaction = crowdReaction(result)
+    crowdShot = reaction !== null
+    if (reaction) {
+      crowd.react(reaction.kind, reaction.strength)
+      if (mode === 'play') events.onSound(reaction.kind, reaction.strength)
+      if (reaction.kind === 'cheer') {
+        confetti.burst(reaction.strength)
+        lampFlashElapsed = 0
+        lampFlashStrength = reaction.strength
+      }
+    }
     if (mode === 'attract') {
       attractStep = 'result'
       attractTimer = ATTRACT_RESULT_PAUSE_SECONDS
@@ -605,7 +655,10 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
         if (mode === 'play') events.onSound('rim', event.intensity)
         break
       case 'drop':
-        if (mode === 'play') events.onSound('drop', 1)
+        if (mode === 'play') {
+          events.onSound('drop', 1)
+          events.onAnnounce(NO_MORE_BETS_CALLOUT)
+        }
         break
       case 'pocketDrop':
         if (mode === 'play') events.onSound('pocketDrop', event.intensity)
@@ -635,6 +688,22 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
     }
   }
 
+  /** Brightens the table lamps in a few quick pulses after a cheer, then restores them. */
+  function updateLampFlash(dt: number): void {
+    let gain = 1
+    if (lampFlashElapsed !== null) {
+      lampFlashElapsed += dt
+      if (lampFlashElapsed >= LAMP_FLASH_SECONDS) {
+        lampFlashElapsed = null
+      } else {
+        const pulse = Math.sin((lampFlashElapsed / LAMP_FLASH_SECONDS) * LAMP_FLASH_PULSES * Math.PI)
+        gain = 1 + LAMP_FLASH_GAIN * lampFlashStrength * pulse * pulse
+      }
+    }
+    layoutSpot.intensity = LAYOUT_SPOT_INTENSITY * gain
+    wheelSpot.intensity = WHEEL_SPOT_INTENSITY * gain
+  }
+
   // --- Camera rig ----------------------------------------------------------------------------
 
   const probeCamera = new THREE.PerspectiveCamera(CAMERA_FOV_DEGREES, 1, CAMERA_NEAR, CAMERA_FAR)
@@ -643,6 +712,7 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
   const rigLookScratch = new THREE.Vector3()
   const rigUpScratch = new THREE.Vector3(0, 1, 0)
   const ballWorldScratch = new THREE.Vector3()
+  const crowdWatchScratch = new THREE.Vector3()
 
   const fitExtra: Record<FitView, number> = { table: 0, wheel: 0, overhead: 0 }
 
@@ -663,6 +733,11 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
   function resolveView(): ResolvedView {
     if (cameraView !== 'auto') return cameraView
     if (session.phase === 'spinning') return 'wheel'
+    if (session.phase === 'result' && crowdShot) {
+      if (resultElapsed < CROWD_SHOT_START_SECONDS) return 'closeup'
+      if (resultElapsed < CROWD_SHOT_START_SECONDS + CROWD_SHOT_SECONDS) return 'crowd'
+      return 'table'
+    }
     if (session.phase === 'result' && resultElapsed < AUTO_CLOSEUP_SECONDS) return 'closeup'
     return 'table'
   }
@@ -797,6 +872,10 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
     if (resolved === 'closeup' && wheelView.ballWorldPosition(ballWorldScratch)) {
       rigLookScratch.copy(ballWorldScratch)
       rigEyeScratch.copy(CLOSEUP_EYE)
+      rigUpScratch.set(0, 1, 0)
+    } else if (resolved === 'crowd') {
+      rigLookScratch.copy(CROWD_SHOT_LOOK)
+      rigEyeScratch.set(CROWD_SHOT_CENTER_X, CROWD_SHOT_EYE_Y, portrait ? CROWD_SHOT_PORTRAIT_EYE_Z : CROWD_SHOT_EYE_Z)
       rigUpScratch.set(0, 1, 0)
     } else {
       const fitView: FitView = resolved === 'closeup' ? 'table' : resolved
@@ -1125,6 +1204,10 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
     table.update(paused ? 0 : dt, simTime)
     wheelView.update(wheel, paused ? 0 : dt)
     tote.update(simTime)
+    crowd.setWatchTarget(wheelView.ballWorldPosition(crowdWatchScratch) ? crowdWatchScratch : null)
+    crowd.update(paused ? 0 : dt, simTime)
+    confetti.update(paused ? 0 : dt)
+    updateLampFlash(paused ? 0 : dt)
 
     updateCamera(paused ? 0 : dt)
     updateHud()
@@ -1222,6 +1305,8 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
       wheelView.dispose()
       tote.dispose()
       room.dispose()
+      crowd.dispose()
+      confetti.dispose()
 
 
       renderPass.dispose()
