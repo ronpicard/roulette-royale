@@ -65,7 +65,7 @@ import {
 import { createWheel, launchBall, stepWheel, relativeSpeed, FIXED_DT } from '../game/physics.ts'
 import { spinParamsFromSeed } from '../game/rng.ts'
 import { attractBets } from '../game/autoplay.ts'
-import { NO_MORE_BETS_CALLOUT, crowdReaction, resultCallout } from '../game/crowd.ts'
+import { crowdReaction } from '../game/crowd.ts'
 import type { ChipValue, Session, SessionSave, Transition, WheelEvent, WheelState } from '../game/types.ts'
 
 // -------------------------------------------------------------------------------------------
@@ -621,7 +621,6 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
     tote.setHistory(session.history, session.stats.counts)
     showingResult = true
     const result = session.lastResult
-    if (mode === 'play' && result) events.onAnnounce(resultCallout(result.number, result.color))
     const reaction = crowdReaction(result)
     crowdShot = reaction !== null
     if (reaction) {
@@ -655,10 +654,7 @@ export function createEngine(canvas: HTMLCanvasElement, events: EngineEvents): E
         if (mode === 'play') events.onSound('rim', event.intensity)
         break
       case 'drop':
-        if (mode === 'play') {
-          events.onSound('drop', 1)
-          events.onAnnounce(NO_MORE_BETS_CALLOUT)
-        }
+        if (mode === 'play') events.onSound('drop', 1)
         break
       case 'pocketDrop':
         if (mode === 'play') events.onSound('pocketDrop', event.intensity)

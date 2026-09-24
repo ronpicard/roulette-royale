@@ -2,6 +2,17 @@
 
 All notable changes to Roulette Royale are documented in this file, following the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.2.0] - 2026-09-24
+
+### Changed
+
+- The crowd now groans in disappointment at a loss instead of booing.
+- A more realistic spin: the ball roars around the track with a swell on every lap, skitters over the wood as it slows, and lands with a sharp tick when launched.
+
+### Removed
+
+- The croupier's spoken call-outs and the "Croupier voice" setting. The on-screen call-out banner stays.
+
 ## [1.1.0] - 2026-09-24
 
 ### Added

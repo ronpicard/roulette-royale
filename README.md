@@ -1,6 +1,6 @@
 # Roulette Royale
 
-Roulette Royale is a 3D European roulette table that runs in the browser: a lacquered mahogany wheel with a brass turret, chrome frets and diamonds, and an ivory ball, next to a green baize layout under a low table lamp, in a dim casino among slot machines, chandeliers and marquee lights. The ball is simulated, not animated: it rides the rim, spirals down the bowl, glances off the diamonds and rattles between the frets until it settles. A crowd of spectators watches every spin, cheers your wins under a shower of confetti, and boos your losses. Play the [live demo](https://ronpicard.github.io/roulette-royale/) — it works on both phones and desktops.
+Roulette Royale is a 3D European roulette table that runs in the browser: a lacquered mahogany wheel with a brass turret, chrome frets and diamonds, and an ivory ball, next to a green baize layout under a low table lamp, in a dim casino among slot machines, chandeliers and marquee lights. The ball is simulated, not animated: it rides the rim, spirals down the bowl, glances off the diamonds and rattles between the frets until it settles. A crowd of spectators watches every spin, cheers your wins under a shower of confetti, and groans at your losses. Play the [live demo](https://ronpicard.github.io/roulette-royale/) — it works on both phones and desktops.
 
 It plays for credits only. There is no real money, no purchases, and nothing to win.
 
@@ -9,12 +9,11 @@ It plays for credits only. There is no real money, no purchases, and nothing to 
 - Pick a chip from the rack (1, 5, 25, 100 or 500 credits) and click or tap the felt to bet. A tap in the middle of a number bets it straight up; a tap on a line between numbers bets the split, corner, street or six line on that line.
 - Right-click a stack, or press and hold it on a touch screen, to take it back. `UNDO`, `CLEAR`, `REBET` (the last spin's bets) and `×2` (double everything on the table) do what they say.
 - Press `SPIN` when your bets are down. The dealer calls "No more bets" and launches the ball.
-- Winning bets are paid, losing chips are swept, and a dolly marks the winning number until you bet again. The croupier calls the number aloud.
-- The spectators cheer a win, louder the bigger it pays, and boo a loss. They say nothing when you break even or have no bet down.
+- Winning bets are paid, losing chips are swept, and a dolly marks the winning number until you bet again.
+- The spectators cheer a win, louder the bigger it pays, and groan in dismay at a loss. They stay quiet when you break even or have no bet down.
 - You start with 1,000 credits, and your credits and history are kept in your browser. If you run out, the table offers a refill.
 - The camera follows the game by default: the layout while you bet, the wheel while it spins, and a close look at the winning pocket. The camera button or `C` cycles it with three fixed views: seated at the layout, looking into the wheel, and straight down on the table.
 - Quick spin runs the wheel at double speed. The outcome of a spin does not change.
-- The croupier's voice uses your browser's built-in speech voices, so it sounds different from one device to another. Turn it off under "Croupier voice" in the menu's settings.
 - While the menu is up, the table plays itself.
 
 ### Keyboard
@@ -66,8 +65,7 @@ This prints the distribution of winning numbers with its chi-square statistic, t
 - React 19 and TypeScript for the menu, HUD, chip rack and result banner
 - Plain three.js for the table, the wheel and the casino around them: physically based materials, soft shadows under a table lamp, and a light bloom pass for the marquee bulbs. Reflections in the chrome, brass and lacquer are captured from the casino room itself
 - Every texture is drawn in code at start-up: the felt layout, the number ring, the chips, the tote board, the carpet, the slot machine reels, and the wood grain and brushed metal maps — no image files
-- Web Audio, synthesised in code at runtime — no audio files: the ball, chips and chimes, the room's murmur and distant slot machines, and the crowd's cheers and boos
-- The Web Speech API for the croupier's call-outs
+- Web Audio, synthesised in code at runtime — no audio files: the ball, chips and chimes, the room's murmur and distant slot machines, and the crowd's cheers and groans
 - Vite for building and development
 - Node's built-in test runner (`node:test`), no separate test framework
 - No backend — credits, history and settings live in `localStorage`
@@ -78,10 +76,10 @@ This prints the distribution of winning numbers with its chi-square statistic, t
 The game logic is kept separate from rendering and input, so the wheel physics, the bets and the session rules can be unit tested without a browser or a canvas:
 
 ```text
-src/game/    the wheel geometry and physics, seeded spins, the bets and layout, session rules, demo bets, crowd reactions and call-outs
+src/game/    the wheel geometry and physics, seeded spins, the bets and layout, session rules, demo bets and crowd reactions
 src/render/  the three.js engine and its public API, the wheel, table, tote board, casino room, spectators and confetti, procedural textures
 src/ui/      React components for the menu, HUD and result banner, the canvas mount, and storage
-src/audio.ts synthesised sound effects, ambience and the croupier's voice
+src/audio.ts synthesised sound effects and ambience
 scripts/     the headless spin simulator
 ```
 

@@ -1,6 +1,6 @@
 /**
  * The spectators who stand around the table: a croupier plus a scattering of guests in evening
- * wear who idle, watch the ball and cheer or boo the result. Everything here is built from three.js
+ * wear who idle, watch the ball and cheer or groan at the result. Everything here is built from three.js
  * primitives (no models), animated procedurally, with a seeded PRNG so layout and motion are varied
  * but reproducible.
  */
@@ -27,8 +27,8 @@ export interface CrowdView {
 export const CROWD_FILL_LIGHT_INTENSITY = 1.4
 /** Reactions last long enough to fill the engine's crowd shot after the pocket close-up. */
 const CHEER_BASE_SECONDS = 3.6
-const BOO_BASE_SECONDS = 2.8
-/** Where the player stands, for the spectators to cheer or boo at. */
+const GROAN_BASE_SECONDS = 2.8
+/** Where the player stands, for the spectators to cheer or groan at. */
 const PLAYER_LOOK_POINT = { x: 7, y: 58, z: 50 }
 
 // -------------------------------------------------------------------------------------------
@@ -163,9 +163,9 @@ interface CurrentPose {
   breath: number
   /** 0 closed to 1 wide open. */
   mouthOpen: number
-  /** 0 a wide smile/shout to 1 a round 'boo'. */
+  /** 0 a wide smile/shout to 1 a round 'aww'. */
   mouthRound: number
-  /** −1 raised in delight to 1 an angry frown. */
+  /** −1 brows raised at the inner ends (delight, or dismay) to 1 an angry frown. */
   frown: number
 }
 
@@ -370,7 +370,7 @@ function buildFigure(spec: FigureSpec, seed: number, caches: Caches): Figure {
   neck.position.set(0, TORSO_LEN + NECK_LEN, 0)
   torso.add(neck)
 
-  // Head: a slightly tall ellipsoid with ears, eyes, nose and a mouth that opens to cheer or boo.
+  // Head: a slightly tall ellipsoid with ears, eyes, nose and a mouth that opens to cheer or groan.
   const head = new THREE.Group()
   head.position.y = HEAD_RADIUS * 1.05
   head.scale.set(0.9, 1.1, 0.98)
@@ -579,28 +579,19 @@ function reactionPose(
     return
   }
 
-  // Boo.
-  out.mouthOpen = 0.55 + 0.2 * Math.abs(Math.sin(elapsed * 2.2))
-  out.mouthRound = 1
-  out.frown = 1
+  // Groan: a disappointed "awww", brows up at the inner ends, shoulders dropping.
+  out.mouthOpen = 0.6 - 0.3 * clamp01(elapsed / 2.5)
+  out.mouthRound = 0.6
+  out.frown = -0.9
   if (!full) {
-    // A half-hearted thumbs-down, held out to the side.
-    out.shoulderR = deg(-50) + Math.sin(elapsed * 6) * deg(5)
-    spreadOut(out, REST_ABDUCTION, deg(30))
-    out.elbowR = deg(-20)
-    out.neckYaw = Math.sin(elapsed * Math.PI * 1.5) * deg(10)
+    // Head drops with a slow shake.
+    out.torsoPitch = deg(5)
+    out.neckPitch = deg(10)
+    out.neckYaw = Math.sin(elapsed * Math.PI * 1.2) * deg(12)
+    spreadOut(out, deg(3), deg(3))
     return
   }
   if (variant === 0) {
-    // Both thumbs down, arms out low to the sides, jabbing.
-    const jab = Math.abs(Math.sin(elapsed * 6)) * deg(12)
-    out.shoulderL = deg(-40) + jab
-    out.shoulderR = deg(-40) + jab
-    spreadOut(out, deg(38), deg(38))
-    out.elbowL = deg(-15)
-    out.elbowR = deg(-15)
-    out.torsoPitch = deg(6)
-  } else if (variant === 1) {
     // Hands on head, elbows out.
     out.shoulderL = deg(-125)
     out.shoulderR = deg(-125)
@@ -608,6 +599,13 @@ function reactionPose(
     out.elbowL = deg(-125)
     out.elbowR = deg(-125)
     out.neckPitch = deg(-6)
+  } else if (variant === 1) {
+    // Face in one hand, head bowed into it.
+    out.shoulderR = deg(-105)
+    spreadOut(out, REST_ABDUCTION, deg(-18))
+    out.elbowR = deg(-135)
+    out.neckPitch = deg(16)
+    out.torsoPitch = deg(6)
   } else {
     // Slumped, shaking the head.
     out.torsoPitch = deg(9)
@@ -651,7 +649,7 @@ export function createCrowd(): CrowdView {
 
   function react(kind: CrowdReactionKind, strength: number): void {
     const s = clamp01(strength)
-    const duration = kind === 'cheer' ? CHEER_BASE_SECONDS + 2 * s : BOO_BASE_SECONDS + 1.5 * s
+    const duration = kind === 'cheer' ? CHEER_BASE_SECONDS + 2 * s : GROAN_BASE_SECONDS + 1.5 * s
     for (const fig of figures) {
       if (fig.isCroupier) {
         if (kind === 'cheer') fig.croupierClapStart = -1 // set to real time on next update tick
@@ -796,7 +794,7 @@ export function createCrowd(): CrowdView {
     }
 
     // --- head look-at (independent of body pose, own damping time constant) -----------------
-    // While reacting, they cheer or boo at the player rather than at the wheel.
+    // While reacting, they cheer or groan at the player rather than at the wheel.
     const look = weight > 0.5 ? PLAYER_LOOK_POINT : target
     const dx = look.x - fig.headWorldX
     const dy = look.y - fig.headWorldY

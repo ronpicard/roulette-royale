@@ -31,7 +31,6 @@ export default function GameCanvas({ events, onReady }: GameCanvasProps) {
       onSound: (name, intensity) => eventsRef.current.onSound(name, intensity),
       onRolling: (level, pitch) => eventsRef.current.onRolling(level, pitch),
       onMessage: (text, seconds) => eventsRef.current.onMessage(text, seconds),
-      onAnnounce: (text) => eventsRef.current.onAnnounce(text),
       onSave: (save) => eventsRef.current.onSave(save),
     }
 

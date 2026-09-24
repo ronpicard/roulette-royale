@@ -9,10 +9,24 @@ const NOISE_BUFFER_SECONDS = 1
 const MIN_VOICE_INTERVAL_S = 0.025
 /** Rolling loop's gain and filter frequency ease toward their targets with this time constant. */
 const ROLLING_TIME_CONSTANT = 0.09
-const ROLLING_MIN_FREQ = 700
-const ROLLING_MAX_FREQ = 2600
+/** The ball's roar: band-passed noise whose centre climbs with speed, from a slow rumble to a hiss. */
+const ROLLING_MIN_FREQ = 450
+const ROLLING_MAX_FREQ = 3200
+/**
+ * Laps per second at full rolling pitch: the ball track is about 88 in round and a full-pitch ball
+ * moves at about 220 in/s. The roar swells and dips once a lap, the way a real wheel "whooms".
+ */
+const ROLLING_LAP_HZ_AT_FULL = 2.5
+const ROLLING_LAP_HZ_MIN = 0.4
+/** How far the once-a-lap swell moves the roar's loudness (fraction) and its filter centre (fraction). */
+const ROLLING_LAP_GAIN_DEPTH = 0.3
+const ROLLING_LAP_FREQ_DEPTH = 0.08
+/** Grit: a looped buffer of tiny random ticks, a hard ball skittering over the wooden track. */
+const ROLLING_GRIT_BUFFER_SECONDS = 2
+const ROLLING_GRIT_TICKS_PER_SECOND = 420
+const ROLLING_GRIT_HIGHPASS_HZ = 2200
 
-/** Crowd voices (cheer/boo) are bused through a compressor so overlapping voices never clip. */
+/** Crowd voices (cheer/groan) are bused through a compressor so overlapping voices never clip. */
 const CROWD_COMPRESSOR_THRESHOLD_DB = -18
 const CROWD_COMPRESSOR_RATIO = 4
 /** A crowd's reaction lands slightly after the event that caused it. */
@@ -36,10 +50,6 @@ export interface GameAudio {
   setMuted(muted: boolean): void
   /** Call from a user gesture to unlock the AudioContext. */
   resume(): void
-  /** Speaks a croupier call-out, if the voice is on and sound is not muted. */
-  announce(text: string): void
-  /** Turns the croupier's voice on or off (off cancels anything being spoken). */
-  setVoiceEnabled(enabled: boolean): void
   dispose(): void
 }
 
@@ -160,7 +170,9 @@ function voiceLaunch(context: AudioContext, out: GainNode, buffer: AudioBuffer, 
     filter.disconnect()
     gain.disconnect()
   }
-  playTone(context, out, now + 0.3, 900, 0.06, 0.08 * amount, { type: 'triangle', endFreq: 1400, attack: 0.004 })
+  // The ball meeting the track as it leaves the croupier's fingers: a hard little tick and thud.
+  playNoiseBurst(context, out, buffer, now + 0.3, 3000, 4, 0.025, 0.07 * amount, 0.0008)
+  playTone(context, out, now + 0.3, 240, 0.05, 0.04 * amount, { type: 'sine', endFreq: 140, attack: 0.002 })
 }
 
 function voiceNoMoreBets(context: AudioContext, out: GainNode, _buffer: AudioBuffer, now: number, intensity: number): void {
@@ -248,7 +260,7 @@ function voiceDenied(context: AudioContext, out: GainNode, _buffer: AudioBuffer,
   playTone(context, out, now, 116, 0.18, peak * 0.7, { type: 'square', endFreq: 95, attack: 0.01 })
 }
 
-// --- Crowd cheer/boo helpers --------------------------------------------------------------------
+// --- Crowd cheer/groan helpers --------------------------------------------------------------------
 // `out` for both is the lazily-created crowd bus (see `ensureCrowdBus`), never the master directly.
 
 const CHEER_ROAR_FREQS = [500, 1100, 2300] as const
@@ -407,61 +419,52 @@ function voiceCheer(context: AudioContext, out: GainNode, buffer: AudioBuffer, n
   }
 }
 
-/** One boo voice: a detuned sawtooth+triangle pair drifting down in pitch through an "oo" formant. */
-function playBooVoice(context: AudioContext, out: AudioNode, start: number, freq: number, sustain: number, peak: number): void {
-  const detune = (Math.random() - 0.5) * 30 // +-15 cents
-  const endFreq = freq * 0.88 // ~12% drift down
-
+/**
+ * One voice of a disappointed "awww": a sawtooth glottal source whose pitch lifts briefly then sags
+ * by about a third, through "aw" vowel formants that close towards "oh" as it fades.
+ */
+function playGroanVoice(context: AudioContext, out: AudioNode, start: number, freq: number, length: number, peak: number): void {
   const osc = context.createOscillator()
   osc.type = 'sawtooth'
-  osc.detune.value = detune
+  osc.detune.value = (Math.random() - 0.5) * 30
+  const lift = 0.12 + Math.random() * 0.1
   osc.frequency.setValueAtTime(freq, start)
+  osc.frequency.linearRampToValueAtTime(freq * 1.1, start + lift)
+  osc.frequency.exponentialRampToValueAtTime(freq * (0.64 + Math.random() * 0.1), start + length)
 
-  const triangle = context.createOscillator()
-  triangle.type = 'triangle'
-  triangle.detune.value = detune
-  triangle.frequency.setValueAtTime(freq, start)
-  const triangleGain = context.createGain()
-  triangleGain.gain.value = 0.4 // quieter than the sawtooth
-
-  const attack = 0.18
-  const release = 0.6
-  const total = attack + sustain + release
-  osc.frequency.exponentialRampToValueAtTime(endFreq, start + total)
-  triangle.frequency.exponentialRampToValueAtTime(endFreq, start + total)
-
+  // A little unsteadiness, as a sigh has.
   const vibrato = context.createOscillator()
   vibrato.type = 'sine'
-  vibrato.frequency.value = 4 + Math.random() * 2
+  vibrato.frequency.value = 5 + Math.random() * 2
   const vibratoDepth = context.createGain()
-  vibratoDepth.gain.value = freq * 0.015
+  vibratoDepth.gain.value = freq * 0.012
   vibrato.connect(vibratoDepth)
   vibratoDepth.connect(osc.frequency)
-  vibratoDepth.connect(triangle.frequency)
 
   const lowpass = context.createBiquadFilter()
   lowpass.type = 'lowpass'
-  lowpass.frequency.value = 900
+  lowpass.frequency.value = 2400
 
   const formant1 = context.createBiquadFilter()
   formant1.type = 'bandpass'
-  formant1.frequency.value = 320
-  formant1.Q.value = 3
+  formant1.Q.value = 4
+  formant1.frequency.setValueAtTime(720, start)
+  formant1.frequency.exponentialRampToValueAtTime(480, start + length)
   const formant2 = context.createBiquadFilter()
   formant2.type = 'bandpass'
-  formant2.frequency.value = 800
-  formant2.Q.value = 6
+  formant2.Q.value = 7
+  formant2.frequency.setValueAtTime(1150, start)
+  formant2.frequency.exponentialRampToValueAtTime(850, start + length)
   const formant2Gain = context.createGain()
-  formant2Gain.gain.value = 0.4
+  formant2Gain.gain.value = 0.5
 
   const gain = context.createGain()
   gain.gain.setValueAtTime(0.0001, start)
-  gain.gain.exponentialRampToValueAtTime(peak, start + attack)
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + total)
+  gain.gain.exponentialRampToValueAtTime(peak, start + 0.12)
+  gain.gain.setValueAtTime(peak, start + length * 0.35)
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + length)
 
   osc.connect(lowpass)
-  triangle.connect(triangleGain)
-  triangleGain.connect(lowpass)
   lowpass.connect(formant1)
   lowpass.connect(formant2)
   formant1.connect(gain)
@@ -469,12 +472,10 @@ function playBooVoice(context: AudioContext, out: AudioNode, start: number, freq
   formant2Gain.connect(gain)
   gain.connect(out)
 
-  const stop = start + total + 0.05
+  const stop = start + length + 0.05
   osc.start(start)
-  triangle.start(start)
   vibrato.start(start)
   osc.stop(stop)
-  triangle.stop(stop)
   vibrato.stop(stop)
   osc.onended = () => {
     osc.disconnect()
@@ -484,43 +485,42 @@ function playBooVoice(context: AudioContext, out: AudioNode, start: number, freq
     formant2Gain.disconnect()
     gain.disconnect()
   }
-  triangle.onended = () => {
-    triangle.disconnect()
-    triangleGain.disconnect()
-  }
   vibrato.onended = () => {
     vibrato.disconnect()
     vibratoDepth.disconnect()
   }
 }
 
-function voiceBoo(context: AudioContext, out: GainNode, buffer: AudioBuffer, now: number, intensity: number): void {
+/** The crowd's sad "awww" at a loss: a chorus of falling voices over a breathy sigh. */
+function voiceGroan(context: AudioContext, out: GainNode, buffer: AudioBuffer, now: number, intensity: number): void {
   const s = clamp01(intensity)
   const start = now + CROWD_REACTION_DELAY_MIN_S + Math.random() * (CROWD_REACTION_DELAY_MAX_S - CROWD_REACTION_DELAY_MIN_S)
-  const duration = 2.4 + 1.2 * s
+  const duration = 1.6 + 1.0 * s
   // Same combined-loudness target as the cheer.
   const peak = 0.04 + 0.11 * s
 
   const voiceCount = Math.round(6 + 8 * s)
   for (let i = 0; i < voiceCount; i++) {
-    const stagger = Math.random() * 0.35
-    const freq = Math.random() < 1 / 3 ? 190 + Math.random() * 50 : 95 + Math.random() * 95
-    const sustain = Math.max(0.1, duration - stagger - 0.18 - 0.6)
-    playBooVoice(context, out, start + stagger, freq, sustain, peak * 0.6)
+    const stagger = Math.random() * 0.3
+    // Mostly lower voices, a third higher ones.
+    const freq = Math.random() < 1 / 3 ? 210 + Math.random() * 70 : 105 + Math.random() * 60
+    const length = Math.max(0.6, duration - stagger) * (0.8 + Math.random() * 0.2)
+    playGroanVoice(context, out, start + stagger, freq, length, peak * (0.4 + Math.random() * 0.3))
   }
 
-  // Breathy noise bed under the voices.
+  // Breathy sigh under the voices, falling in brightness with them.
   const breathSource = context.createBufferSource()
   breathSource.buffer = buffer
   breathSource.loop = true
   const breathFilter = context.createBiquadFilter()
   breathFilter.type = 'bandpass'
-  breathFilter.frequency.value = 400
-  breathFilter.Q.value = 1
+  breathFilter.Q.value = 0.8
+  breathFilter.frequency.setValueAtTime(1100, start)
+  breathFilter.frequency.exponentialRampToValueAtTime(450, start + duration)
   const breathGain = context.createGain()
-  const breathStop = start + duration + 0.6
+  const breathStop = start + duration + 0.3
   breathGain.gain.setValueAtTime(0.0001, start)
-  breathGain.gain.exponentialRampToValueAtTime(peak * 0.15, start + 0.3)
+  breathGain.gain.exponentialRampToValueAtTime(peak * 0.25, start + 0.2)
   breathGain.gain.exponentialRampToValueAtTime(0.0001, breathStop)
   breathSource.connect(breathFilter)
   breathFilter.connect(breathGain)
@@ -551,20 +551,31 @@ const VOICES: Record<SoundName, Voice> = {
   bigWin: voiceBigWin,
   lose: voiceLose,
   cheer: voiceCheer,
-  boo: voiceBoo,
+  groan: voiceGroan,
   refill: voiceRefill,
   denied: voiceDenied,
 }
 
+/**
+ * The rolling-ball loop. Roar (band-passed noise) and body (low-passed noise) share `lapGain`,
+ * which `lapLfo` swells once a lap; grit (the tick buffer) plays alongside, faster as the ball is.
+ */
 interface RollingNodes {
   source: AudioBufferSourceNode
-  filter: BiquadFilterNode
-  noiseGain: GainNode
-  rumble: OscillatorNode
-  rumbleGain: GainNode
+  roarFilter: BiquadFilterNode
+  roarGain: GainNode
+  bodyFilter: BiquadFilterNode
+  bodyGain: GainNode
+  lapGain: GainNode
+  lapLfo: OscillatorNode
+  lapLfoGain: GainNode
+  lapLfoFreqDepth: GainNode
+  grit: AudioBufferSourceNode
+  gritFilter: BiquadFilterNode
+  gritGain: GainNode
 }
 
-/** The crowd bus that `voiceCheer`/`voiceBoo` play into: GainNode -> DynamicsCompressorNode -> master. */
+/** The crowd bus that `voiceCheer`/`voiceGroan` play into: GainNode -> DynamicsCompressorNode -> master. */
 interface CrowdBusNodes {
   input: GainNode
   compressor: DynamicsCompressorNode
@@ -596,7 +607,6 @@ export function createAudio(): GameAudio {
   let ambience: AmbienceNodes | null = null
   let unlocked = false
   let muted = false
-  let voiceEnabled = true
   const lastPlayedAt = new Map<SoundName, number>()
 
   function ensureContext(): boolean {
@@ -633,7 +643,7 @@ export function createAudio(): GameAudio {
     return buffer
   }
 
-  /** Lazily builds the crowd bus that `cheer`/`boo` voices play into. */
+  /** Lazily builds the crowd bus that `cheer`/`groan` voices play into. */
   function ensureCrowdBus(context: AudioContext, out: GainNode): GainNode {
     if (crowdBus) return crowdBus.input
     const input = context.createGain()
@@ -755,60 +765,8 @@ export function createAudio(): GameAudio {
     } catch { /* no-op: audio is optional */ }
   }
 
-  function getSpeechSynthesis(): SpeechSynthesis | null {
-    const w = window as unknown as {
-      speechSynthesis?: SpeechSynthesis
-      SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance
-    }
-    if (!w.speechSynthesis || !w.SpeechSynthesisUtterance) return null
-    return w.speechSynthesis
-  }
-
-  function pickCroupierVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | undefined {
-    const voices = synth.getVoices()
-    // Android reports languages as `en_GB`.
-    const lang = (v: SpeechSynthesisVoice): string => v.lang.replace('_', '-')
-    const preferredNames = ['Daniel', 'Arthur', 'Oliver', 'Google UK English Male']
-    return (
-      voices.find((v) => lang(v) === 'en-GB' && preferredNames.some((name) => v.name.includes(name))) ??
-      voices.find((v) => lang(v) === 'en-GB') ??
-      voices.find((v) => lang(v).startsWith('en')) ??
-      undefined
-    )
-  }
-
-  function announce(text: string): void {
-    if (!voiceEnabled || muted) return
-    try {
-      const synth = getSpeechSynthesis()
-      if (!synth) return
-      synth.cancel()
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.rate = 0.95
-      utterance.pitch = 0.9
-      utterance.volume = 0.9
-      const voice = pickCroupierVoice(synth)
-      if (voice) utterance.voice = voice
-      synth.speak(utterance)
-    } catch { /* no-op: audio is optional */ }
-  }
-
-  function setVoiceEnabled(enabled: boolean): void {
-    voiceEnabled = enabled
-    if (!enabled) {
-      try {
-        getSpeechSynthesis()?.cancel()
-      } catch { /* no-op: audio is optional */ }
-    }
-  }
-
   function setMuted(nextMuted: boolean): void {
     muted = nextMuted
-    if (muted) {
-      try {
-        getSpeechSynthesis()?.cancel()
-      } catch { /* no-op: audio is optional */ }
-    }
     if (!ctx || !master) return
     try {
       const now = ctx.currentTime
@@ -837,38 +795,94 @@ export function createAudio(): GameAudio {
       const last = lastPlayedAt.get(name) ?? -Infinity
       if (now - last < MIN_VOICE_INTERVAL_S) return
       lastPlayedAt.set(name, now)
-      const target = name === 'cheer' || name === 'boo' ? ensureCrowdBus(context, out) : out
+      const target = name === 'cheer' || name === 'groan' ? ensureCrowdBus(context, out) : out
       VOICES[name](context, target, getNoiseBuffer(context), now, clamp01(intensity))
     })
   }
 
-  /** Lazily builds the rolling-ball loop: filtered noise plus a faint low rumble, both silent until eased up. */
+  /** A looped buffer of sparse, tiny decaying ticks at random strengths: the track's grit. */
+  function createGritBuffer(context: AudioContext): AudioBuffer {
+    const length = Math.floor(context.sampleRate * ROLLING_GRIT_BUFFER_SECONDS)
+    const buffer = context.createBuffer(1, length, context.sampleRate)
+    const data = buffer.getChannelData(0)
+    const tickCount = Math.round(ROLLING_GRIT_TICKS_PER_SECOND * ROLLING_GRIT_BUFFER_SECONDS)
+    const decaySamples = context.sampleRate * 0.0004
+    for (let t = 0; t < tickCount; t++) {
+      const at = Math.floor(Math.random() * length)
+      // Mostly faint, the odd sharper one.
+      const strength = Math.pow(Math.random(), 2.5) * (Math.random() < 0.5 ? -1 : 1)
+      for (let k = 0; k < decaySamples * 5 && at + k < length; k++) {
+        data[at + k] += strength * Math.exp(-k / decaySamples) * (Math.random() * 2 - 1)
+      }
+    }
+    return buffer
+  }
+
+  /** Lazily builds the rolling-ball loop, silent until `setRolling` eases it up. */
   function ensureRolling(context: AudioContext, out: GainNode): RollingNodes {
     if (rolling) return rolling
+    const now = context.currentTime
     const source = context.createBufferSource()
     source.buffer = getNoiseBuffer(context)
     source.loop = true
-    const filter = context.createBiquadFilter()
-    filter.type = 'bandpass'
-    filter.Q.value = 0.9
-    filter.frequency.value = ROLLING_MIN_FREQ
-    const noiseGain = context.createGain()
-    noiseGain.gain.value = 0
-    source.connect(filter)
-    filter.connect(noiseGain)
-    noiseGain.connect(out)
-    source.start(context.currentTime)
 
-    const rumble = context.createOscillator()
-    rumble.type = 'sine'
-    rumble.frequency.value = 46
-    const rumbleGain = context.createGain()
-    rumbleGain.gain.value = 0
-    rumble.connect(rumbleGain)
-    rumbleGain.connect(out)
-    rumble.start(context.currentTime)
+    // Once-a-lap swell shared by the roar and the body.
+    const lapGain = context.createGain()
+    lapGain.gain.value = 1
+    lapGain.connect(out)
+    const lapLfo = context.createOscillator()
+    lapLfo.type = 'sine'
+    lapLfo.frequency.value = ROLLING_LAP_HZ_MIN
+    const lapLfoGain = context.createGain()
+    lapLfoGain.gain.value = ROLLING_LAP_GAIN_DEPTH
+    lapLfo.connect(lapLfoGain)
+    lapLfoGain.connect(lapGain.gain)
 
-    rolling = { source, filter, noiseGain, rumble, rumbleGain }
+    const roarFilter = context.createBiquadFilter()
+    roarFilter.type = 'bandpass'
+    roarFilter.Q.value = 1.6
+    roarFilter.frequency.value = ROLLING_MIN_FREQ
+    const lapLfoFreqDepth = context.createGain()
+    lapLfoFreqDepth.gain.value = 0
+    lapLfo.connect(lapLfoFreqDepth)
+    lapLfoFreqDepth.connect(roarFilter.frequency)
+    const roarGain = context.createGain()
+    roarGain.gain.value = 0
+    source.connect(roarFilter)
+    roarFilter.connect(roarGain)
+    roarGain.connect(lapGain)
+
+    // The wooden bowl resonating under the ball.
+    const bodyFilter = context.createBiquadFilter()
+    bodyFilter.type = 'lowpass'
+    bodyFilter.Q.value = 2
+    bodyFilter.frequency.value = 180
+    const bodyGain = context.createGain()
+    bodyGain.gain.value = 0
+    source.connect(bodyFilter)
+    bodyFilter.connect(bodyGain)
+    bodyGain.connect(lapGain)
+
+    const grit = context.createBufferSource()
+    grit.buffer = createGritBuffer(context)
+    grit.loop = true
+    const gritFilter = context.createBiquadFilter()
+    gritFilter.type = 'highpass'
+    gritFilter.frequency.value = ROLLING_GRIT_HIGHPASS_HZ
+    const gritGain = context.createGain()
+    gritGain.gain.value = 0
+    grit.connect(gritFilter)
+    gritFilter.connect(gritGain)
+    gritGain.connect(out)
+
+    source.start(now)
+    grit.start(now, Math.random() * ROLLING_GRIT_BUFFER_SECONDS)
+    lapLfo.start(now)
+
+    rolling = {
+      source, roarFilter, roarGain, bodyFilter, bodyGain, lapGain, lapLfo, lapLfoGain, lapLfoFreqDepth,
+      grit, gritFilter, gritGain,
+    }
     return rolling
   }
 
@@ -879,10 +893,16 @@ export function createAudio(): GameAudio {
       const amount = clamp01(level)
       const p = clamp01(pitch)
       const freq = ROLLING_MIN_FREQ * Math.pow(ROLLING_MAX_FREQ / ROLLING_MIN_FREQ, p)
-      const target = amount * 0.35
-      nodes.noiseGain.gain.setTargetAtTime(target, now, ROLLING_TIME_CONSTANT)
-      nodes.rumbleGain.gain.setTargetAtTime(target * 0.4, now, ROLLING_TIME_CONSTANT)
-      nodes.filter.frequency.setTargetAtTime(freq, now, ROLLING_TIME_CONSTANT)
+      nodes.roarGain.gain.setTargetAtTime(amount * 0.3, now, ROLLING_TIME_CONSTANT)
+      nodes.bodyGain.gain.setTargetAtTime(amount * 0.8, now, ROLLING_TIME_CONSTANT)
+      // The skitter stands out more as the ball slows and starts to chatter.
+      nodes.gritGain.gain.setTargetAtTime(amount * 0.12 * (1.3 - 0.5 * p), now, ROLLING_TIME_CONSTANT)
+      nodes.grit.playbackRate.setTargetAtTime(0.6 + 0.9 * p, now, ROLLING_TIME_CONSTANT)
+      nodes.roarFilter.frequency.setTargetAtTime(freq, now, ROLLING_TIME_CONSTANT)
+      nodes.lapLfoFreqDepth.gain.setTargetAtTime(freq * ROLLING_LAP_FREQ_DEPTH, now, ROLLING_TIME_CONSTANT)
+      nodes.lapLfo.frequency.setTargetAtTime(
+        Math.max(ROLLING_LAP_HZ_MIN, ROLLING_LAP_HZ_AT_FULL * p), now, ROLLING_TIME_CONSTANT,
+      )
       // The crowd hushes while the ball rolls.
       if (ambience) {
         ambience.murmurBus.gain.setTargetAtTime(1 - 0.6 * amount, now, AMBIENCE_HUSH_TIME_CONSTANT)
@@ -894,12 +914,13 @@ export function createAudio(): GameAudio {
     try {
       if (rolling) {
         rolling.source.stop()
-        rolling.rumble.stop()
-        rolling.source.disconnect()
-        rolling.filter.disconnect()
-        rolling.noiseGain.disconnect()
-        rolling.rumble.disconnect()
-        rolling.rumbleGain.disconnect()
+        rolling.grit.stop()
+        rolling.lapLfo.stop()
+        for (const node of [
+          rolling.source, rolling.roarFilter, rolling.roarGain, rolling.bodyFilter, rolling.bodyGain,
+          rolling.lapGain, rolling.lapLfo, rolling.lapLfoGain, rolling.lapLfoFreqDepth,
+          rolling.grit, rolling.gritFilter, rolling.gritGain,
+        ]) node.disconnect()
       }
       if (ambience) {
         if (ambience.jingleTimeout !== null) clearTimeout(ambience.jingleTimeout)
@@ -921,7 +942,6 @@ export function createAudio(): GameAudio {
         crowdBus.input.disconnect()
         crowdBus.compressor.disconnect()
       }
-      getSpeechSynthesis()?.cancel()
       master?.disconnect()
       void ctx?.close()
     } catch { /* no-op: audio is optional */ } finally {
@@ -936,5 +956,5 @@ export function createAudio(): GameAudio {
     }
   }
 
-  return { play, setRolling, setMuted, resume, announce, setVoiceEnabled, dispose }
+  return { play, setRolling, setMuted, resume, dispose }
 }

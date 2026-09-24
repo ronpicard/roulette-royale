@@ -60,8 +60,6 @@ export interface EngineEvents {
   onRolling(level: number, pitch: number): void
   /** A line for the croupier's call-out banner, e.g. `No more bets` or `17 Red`. */
   onMessage(text: string, seconds: number): void
-  /** A line for the croupier to say aloud, e.g. `No more bets.` or `Seventeen, black.` Play mode only. */
-  onAnnounce(text: string): void
   /** Persist this. Sent when a spin starts, when it settles, and on refill. */
   onSave(save: SessionSave): void
 }
