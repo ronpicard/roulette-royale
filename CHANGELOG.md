@@ -2,6 +2,12 @@
 
 All notable changes to Roulette Royale are documented in this file, following the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.3.0] - 2026-09-26
+
+### Changed
+
+- The background is now live lounge music, synthesised in code like every other sound: a walking bass, brushed ride and hi-hat, Rhodes chord stabs and a wandering vibraphone over two alternating eight-bar progressions, in place of the crowd-murmur noise bed. It still ducks while the ball rolls.
+
 ## [1.2.0] - 2026-09-24
 
 ### Changed

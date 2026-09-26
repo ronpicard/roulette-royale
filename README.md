@@ -65,7 +65,7 @@ This prints the distribution of winning numbers with its chi-square statistic, t
 - React 19 and TypeScript for the menu, HUD, chip rack and result banner
 - Plain three.js for the table, the wheel and the casino around them: physically based materials, soft shadows under a table lamp, and a light bloom pass for the marquee bulbs. Reflections in the chrome, brass and lacquer are captured from the casino room itself
 - Every texture is drawn in code at start-up: the felt layout, the number ring, the chips, the tote board, the carpet, the slot machine reels, and the wood grain and brushed metal maps — no image files
-- Web Audio, synthesised in code at runtime — no audio files: the ball, chips and chimes, the room's murmur and distant slot machines, and the crowd's cheers and groans
+- Web Audio, synthesised in code at runtime — no audio files: the ball, chips and chimes, a lounge trio and vibraphone playing in the background with distant slot machines, and the crowd's cheers and groans
 - Vite for building and development
 - Node's built-in test runner (`node:test`), no separate test framework
 - No backend — credits, history and settings live in `localStorage`
@@ -79,7 +79,7 @@ The game logic is kept separate from rendering and input, so the wheel physics, 
 src/game/    the wheel geometry and physics, seeded spins, the bets and layout, session rules, demo bets and crowd reactions
 src/render/  the three.js engine and its public API, the wheel, table, tote board, casino room, spectators and confetti, procedural textures
 src/ui/      React components for the menu, HUD and result banner, the canvas mount, and storage
-src/audio.ts synthesised sound effects and ambience
+src/audio.ts synthesised sound effects and ambience; src/casinoMusic.ts the background lounge music
 scripts/     the headless spin simulator
 ```
 

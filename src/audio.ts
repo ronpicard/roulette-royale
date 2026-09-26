@@ -1,6 +1,8 @@
 /** Synthesised casino roulette sound effects, entirely Web Audio, no asset files. */
 
 import type { SoundName } from './game/types.ts'
+import type { CasinoMusic } from './casinoMusic.ts'
+import { startCasinoMusic } from './casinoMusic.ts'
 
 const MASTER_GAIN = 0.5
 const MUTE_RAMP_SECONDS = 0.03
@@ -33,13 +35,8 @@ const CROWD_COMPRESSOR_RATIO = 4
 const CROWD_REACTION_DELAY_MIN_S = 0.15
 const CROWD_REACTION_DELAY_MAX_S = 0.2
 
-/** Ambience murmur's combined peak, on the master's gain scale: well below the game sounds. */
-const AMBIENCE_MURMUR_PEAK = 0.04
-const AMBIENCE_MURMUR_FREQS = [280, 420, 560, 700, 860]
 /** Murmur level eases toward its "hushed while rolling" target with this time constant. */
 const AMBIENCE_HUSH_TIME_CONSTANT = 0.8
-/** The murmur loops its own longer noise buffer, so the shared 1 s loop doesn't repeat audibly. */
-const AMBIENCE_BUFFER_SECONDS = 5
 const AMBIENCE_JINGLE_MIN_DELAY_MS = 5000
 const AMBIENCE_JINGLE_MAX_DELAY_MS = 9000
 
@@ -581,20 +578,10 @@ interface CrowdBusNodes {
   compressor: DynamicsCompressorNode
 }
 
-interface AmbienceLayer {
-  source: AudioBufferSourceNode
-  filter: BiquadFilterNode
-  gain: GainNode
-  lfo: OscillatorNode
-  lfoGain: GainNode
-  syllables: OscillatorNode
-  syllablesGain: GainNode
-}
-
-/** Continuous casino room tone: a murmur bed (eased by `setRolling`) plus a scheduled slot jingle. */
+/** Continuous casino room tone: a lounge-music bed (eased by `setRolling`) plus a scheduled slot jingle. */
 interface AmbienceNodes {
-  murmurBus: GainNode
-  layers: AmbienceLayer[]
+  musicBus: GainNode
+  music: CasinoMusic
   jingleTimeout: ReturnType<typeof setTimeout> | null
 }
 
@@ -698,60 +685,17 @@ export function createAudio(): GameAudio {
     }, delay)
   }
 
-  /** Starts the continuous room-tone murmur (plus its jingle schedule) once, on the first unlock. */
+  /** Starts the background lounge music (plus its jingle schedule) once, on the first unlock. */
   function startAmbience(): void {
     if (ambience || !ctx || !master) return
     try {
       const context = ctx
       const out = master
-      const length = Math.floor(context.sampleRate * AMBIENCE_BUFFER_SECONDS)
-      const buffer = context.createBuffer(1, length, context.sampleRate)
-      const data = buffer.getChannelData(0)
-      for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1
-      const murmurBus = context.createGain()
-      murmurBus.gain.value = 1
-      murmurBus.connect(out)
-
-      const freqs = AMBIENCE_MURMUR_FREQS.slice(0, 4 + Math.round(Math.random()))
-      const layers = freqs.map((freq): AmbienceLayer => {
-        const source = context.createBufferSource()
-        source.buffer = buffer
-        source.loop = true
-        const filter = context.createBiquadFilter()
-        filter.type = 'bandpass'
-        filter.frequency.value = freq
-        filter.Q.value = 0.8
-
-        const base = AMBIENCE_MURMUR_PEAK / freqs.length
-        const gain = context.createGain()
-        gain.gain.value = base
-
-        const lfo = context.createOscillator()
-        lfo.type = 'sine'
-        lfo.frequency.value = 0.1 + Math.random() * 0.5
-        const lfoGain = context.createGain()
-        lfoGain.gain.value = base * 0.5
-        lfo.connect(lfoGain)
-        lfoGain.connect(gain.gain)
-        // A faster wobble at the rate of syllables makes the murmur read as talk rather than hiss.
-        const syllables = context.createOscillator()
-        syllables.type = 'triangle'
-        syllables.frequency.value = 3 + Math.random() * 3
-        const syllablesGain = context.createGain()
-        syllablesGain.gain.value = base * 0.35
-        syllables.connect(syllablesGain)
-        syllablesGain.connect(gain.gain)
-
-        source.connect(filter)
-        filter.connect(gain)
-        gain.connect(murmurBus)
-        source.start(context.currentTime, Math.random() * AMBIENCE_BUFFER_SECONDS)
-        lfo.start(context.currentTime)
-        syllables.start(context.currentTime)
-        return { source, filter, gain, lfo, lfoGain, syllables, syllablesGain }
-      })
-
-      ambience = { murmurBus, layers, jingleTimeout: null }
+      const musicBus = context.createGain()
+      musicBus.gain.value = 1
+      musicBus.connect(out)
+      const music = startCasinoMusic(context, musicBus)
+      ambience = { musicBus, music, jingleTimeout: null }
       scheduleNextJingle()
     } catch { /* no-op: audio is optional */ }
   }
@@ -905,7 +849,7 @@ export function createAudio(): GameAudio {
       )
       // The crowd hushes while the ball rolls.
       if (ambience) {
-        ambience.murmurBus.gain.setTargetAtTime(1 - 0.6 * amount, now, AMBIENCE_HUSH_TIME_CONSTANT)
+        ambience.musicBus.gain.setTargetAtTime(1 - 0.6 * amount, now, AMBIENCE_HUSH_TIME_CONSTANT)
       }
     })
   }
@@ -924,19 +868,8 @@ export function createAudio(): GameAudio {
       }
       if (ambience) {
         if (ambience.jingleTimeout !== null) clearTimeout(ambience.jingleTimeout)
-        for (const layer of ambience.layers) {
-          layer.source.stop()
-          layer.lfo.stop()
-          layer.syllables.stop()
-          layer.syllables.disconnect()
-          layer.syllablesGain.disconnect()
-          layer.source.disconnect()
-          layer.filter.disconnect()
-          layer.gain.disconnect()
-          layer.lfo.disconnect()
-          layer.lfoGain.disconnect()
-        }
-        ambience.murmurBus.disconnect()
+        ambience.music.stop()
+        ambience.musicBus.disconnect()
       }
       if (crowdBus) {
         crowdBus.input.disconnect()
